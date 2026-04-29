@@ -109,10 +109,23 @@ export function useTpUploader() {
   }, [])
 
   function addEmail(email: EmailOption) {
-    if (!selectedEmails.some((item) => item.id === email.id)) {
-      setSelectedEmails((prev) => [...prev, email])
-      dispatch({ type: "FIELD_ERROR_CLEARED", field: "emails" })
-    }
+    const normalizedEmail = email.email.trim().toLowerCase()
+    if (!normalizedEmail) return
+
+    setSelectedEmails((prev) => {
+      if (prev.some((item) => item.email.trim().toLowerCase() === normalizedEmail)) {
+        return prev
+      }
+      return [
+        ...prev,
+        {
+          ...email,
+          email: email.email.trim(),
+          display: email.display?.trim() || email.email.trim(),
+        },
+      ]
+    })
+    dispatch({ type: "FIELD_ERROR_CLEARED", field: "emails" })
   }
   function removeEmail(id: string) {
     setSelectedEmails((prev) => prev.filter((e) => e.id !== id))
@@ -132,12 +145,14 @@ export function useTpUploader() {
     dispatch({ type: "FIELD_ERROR_CLEARED", field: "companyId" })
     dispatch({ type: "COMPANY_CHANGED", value })
   }, [])
+
   function isXlsx(file: File) {
     const validMime =
       file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     const validExt = file.name.toLowerCase().endsWith(".xlsx")
     return validMime || validExt
   }
+  
   const onFileChange = React.useCallback((file: File | null) => {
     if (!file) {
       dispatch({ type: "FILE_CHANGED", file: null })

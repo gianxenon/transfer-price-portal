@@ -19,8 +19,11 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { FileDown } from "lucide-react";
+import { FileDown, Icon, PlusSquareIcon } from "lucide-react";
  
+function isValidEmailAddress(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
 
 export function TPUploaderUI() {
   const {
@@ -39,6 +42,8 @@ export function TPUploaderUI() {
     removeEmail, 
     onEmailQueryChange
   } = useTpUploader()
+
+  const trimmedEmailQuery = emailQuery.trim()
 
   const resultTone =
     state.result?.status === "success"
@@ -144,11 +149,27 @@ export function TPUploaderUI() {
                           />
                           <CommandList key={emailOptions.length}>
                             {loadingEmails && <CommandEmpty>Loading...</CommandEmpty>}
-                            {!loadingEmails && emailQuery.trim().length < 2 && (
+                            {!loadingEmails && trimmedEmailQuery.length < 2 && (
                               <CommandEmpty>Type at least 2 characters.</CommandEmpty>
                             )}
-                            {!loadingEmails && emailQuery.trim().length >= 2 && emailOptions.length === 0 && (
-                              <CommandEmpty>No results found.</CommandEmpty>
+                            {!loadingEmails && trimmedEmailQuery.length >= 2 && emailOptions.length === 0 && (
+                              isValidEmailAddress(trimmedEmailQuery) ? (
+                                <CommandItem
+                                  value={trimmedEmailQuery}
+                                  onSelect={() => {
+                                    addEmail({
+                                      id: `manual:${trimmedEmailQuery.toLowerCase()}`,
+                                      email: trimmedEmailQuery,
+                                      display: trimmedEmailQuery,
+                                    })
+                                    onEmailQueryChange("")
+                                  }}
+                                >
+                                   {trimmedEmailQuery} <PlusSquareIcon className="ml-2 "  /> 
+                                </CommandItem>
+                              ) : (
+                                <CommandEmpty>No results found. Enter a valid email to add.</CommandEmpty>
+                              )
                             )}
                             {emailOptions.map((option) => (
                               <CommandItem

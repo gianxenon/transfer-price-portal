@@ -4,10 +4,11 @@ import crypto from "crypto"
 import bcrypt from "bcryptjs"
 import { getPool } from "@/src/app/infrastructure/db"
 
-type DbUser = {
+export type DbUser = {
   Userid: number
   UserName: string
   Password: string
+  UsersFullName: string
   isActive: boolean
 }
 
@@ -24,7 +25,7 @@ export async function findUserByUserName(UserName: string): Promise<DbUser | nul
     .request()
     .input("username", sql.VarChar(225), UserName)
     .query(
-      "SELECT Userid, UserName, Password, isActive FROM tpp_users WHERE UserName = @username"
+      "SELECT Userid, UserName, Password, isActive, UsersFullName FROM tpp_users WHERE UserName = @username"
     )
 
   return result.recordset?.[0] ?? null
@@ -80,6 +81,17 @@ export async function getSessionById(sessionToken: string): Promise<SessionRow |
        WHERE Session_Id_Hash = @hash
          AND Revoked_at IS NULL
          AND Expires_at > GETUTCDATE()`
+    )
+
+  return result.recordset?.[0] ?? null
+}
+
+export async function findUserById(Userid: number): Promise<DbUser | null> {
+  const pool = await getPool()
+  const result = await pool.request()
+    .input("userid", sql.Int, Userid)
+    .query(
+      "SELECT Userid, UserName, Password, isActive, UsersFullName FROM tpp_users WHERE Userid = @userid"
     )
 
   return result.recordset?.[0] ?? null
