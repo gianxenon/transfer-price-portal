@@ -57,10 +57,11 @@ function isRowEmpty(row: unknown[]) {
 }
 
 function parseNumber(value: unknown) {
-  if (typeof value === "number") return value
+  if (typeof value === "number") return Number.isFinite(value) ? value : NaN
   const cleaned = String(value ?? "").replace(/,/g, "").trim()
   if (!cleaned) return NaN
-  return Number(cleaned)
+  const parsed = Number(cleaned)
+  return Number.isFinite(parsed) ? parsed : NaN
 }
 
 export async function validateTpUpload(file: File): Promise<TpUploaderValidationResult> {
@@ -117,6 +118,15 @@ export async function validateTpUpload(file: File): Promise<TpUploaderValidation
         errors.push({
           row: rowNumber,
           message: `${header} must be numeric.`,
+          status: "error",
+        })
+        return
+      }
+
+      if (numberValue <= 0) {
+        errors.push({
+          row: rowNumber,
+          message: `${header} must be greater than 0.`,
           status: "error",
         })
       }

@@ -1,9 +1,15 @@
+import "server-only"
+
 import { cookies } from "next/headers"
+import sql from "mssql"
 import { validateTpUpload } from "@/src/app/application/use-cases/tp-uploader/validate"
+import { sendTpUploadSummaryEmails } from "@/src/app/application/use-cases/tp-uploader/send-summary-emails"
 import { getSessionById, getUserNameById } from "@/src/app/infrastructure/db/auth-repo"
+import { getPool } from "@/src/app/infrastructure/db"
 import { upsertTpRows } from "@/src/app/infrastructure/db/tp-uploader-repo"
 
 export const runtime = "nodejs"
+export const maxDuration = 60
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
@@ -64,6 +70,21 @@ export async function POST(request: Request) {
       }
     }
 
+    let companyName: string | undefined
+    try {
+      const pool = await getPool()
+      const result = await pool
+        .request()
+        .input("companyId", sql.Int, customersMotherCompanyId)
+        .query(
+          "SELECT TOP 1 CustomersMotherCompanyName AS companyName FROM CustomersMotherCompany WHERE CustomersMotherCompanyId = @companyId"
+        )
+      const rawName = String(result.recordset?.[0]?.companyName ?? "").trim()
+      companyName = rawName || undefined
+    } catch {
+      companyName = undefined
+    }
+
     await upsertTpRows({
       rows: validation.rows || [],
       customersMotherCompanyId,
@@ -72,7 +93,35 @@ export async function POST(request: Request) {
       filename: file.name,
       createdBy,
     })
-    return jsonResponse({ ok: true, summary: validation.summary, items: validation.items }, 200)
+
+    try {
+      const emailResult = await sendTpUploadSummaryEmails({
+        rows: validation.rows || [],
+        effectivityDate,
+        emailList,
+        filename: file.name,
+        companyName,
+        createdBy,
+      })
+
+      const bcCount = emailResult.sent.length
+      const summary = `${validation.summary} Emails sent per BC: ${bcCount}.`
+      return jsonResponse({ ok: true, summary, items: validation.items }, 200)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send summary email."
+      const summary = `${validation.summary} Upload completed, but email sending failed: ${message}`
+      return jsonResponse(
+        {
+          ok: true,
+          summary,
+          items: [
+            ...(validation.items || []),
+            { row: 0, message, status: "warning" },
+          ],
+        },
+        200
+      )
+    }
   
   } catch (error) {
      const message = error instanceof Error ? error.message : "Error processing file."

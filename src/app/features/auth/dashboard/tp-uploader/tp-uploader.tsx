@@ -19,7 +19,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { FileDown, Icon, PlusSquareIcon } from "lucide-react";
+import { FileDown, PlusSquareIcon } from "lucide-react";
  
 function isValidEmailAddress(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)

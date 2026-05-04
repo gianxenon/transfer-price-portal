@@ -2,6 +2,7 @@ import "server-only"
 
 import sql from "mssql"
 import { getPool } from "@/src/app/infrastructure/db"
+import { getMysqlPool } from "./mysql"
 
 type TpUploaderRow = Record<string, string | number>
 
@@ -17,7 +18,7 @@ type UpsertTpRowsInput = {
 const RECEIPT_TYPE_ID = 10
 const APPROVAL_STATUS = 1
 
-const BUSINESS_CENTER_UNIT_BY_HEADER: Record<string, number> = { 
+export const BUSINESS_CENTER_UNIT_BY_HEADER: Record<string, number> = { 
   "NCR": 18,
   "UPPER LUZON": 23,
   "CENTRAL LUZON": 24,
@@ -41,7 +42,7 @@ const BUSINESS_CENTER_UNIT_BY_HEADER: Record<string, number> = {
   "BC Butuan": 20,
 }
 
-const BUSINESS_CENTER_HEADERS = Object.keys(BUSINESS_CENTER_UNIT_BY_HEADER)
+export const BUSINESS_CENTER_HEADERS = Object.keys(BUSINESS_CENTER_UNIT_BY_HEADER)
 
 function parseNumber(value: unknown) {
   if (typeof value === "number") return value
@@ -65,17 +66,17 @@ export async function upsertTpRows(input: UpsertTpRowsInput): Promise<void> {
   await transaction.begin()
 
   try {
-    await transaction
-      .request()
-      .input("companyId", sql.Int, input.customersMotherCompanyId)
-      .input("effectivityDate", sql.Date, effectivityDate)
-      .input("receiptTypeId", sql.Int, RECEIPT_TYPE_ID)
-      .query(
-        `DELETE FROM uploaded_transfer_price
-         WHERE customersMotherCompanyId = @companyId
-           AND effectivity_date = @effectivityDate
-           AND receiptTypeId = @receiptTypeId`
-      )
+    // await transaction
+    //   .request()
+    //   .input("companyId", sql.Int, input.customersMotherCompanyId)
+    //   .input("effectivityDate", sql.Date, effectivityDate)
+    //   .input("receiptTypeId", sql.Int, RECEIPT_TYPE_ID)
+    //   .query(
+    //     `DELETE FROM uploaded_transfer_price
+    //      WHERE customersMotherCompanyId = @companyId
+    //        AND effectivity_date = @effectivityDate
+    //        AND receiptTypeId = @receiptTypeId`
+    //   )
 
     for (const row of input.rows) {
       const productId = String(row["ProductsId"] ?? "").trim()
@@ -147,9 +148,12 @@ export async function upsertTpRows(input: UpsertTpRowsInput): Promise<void> {
       }
     }
 
+    
     await transaction.commit()
   } catch (error) {
     await transaction.rollback()
     throw error
   }
+
+   
 }
