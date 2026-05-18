@@ -24,29 +24,13 @@ const data = {
   },
   teams: [
     {
-      name: "Acme Inc",
+      name: "Transfer Price Portal",
       logo: (
         <GalleryVerticalEndIcon
         />
       ),
-      plan: "Enterprise",
-    },
-    {
-      name: "Acme Corp.",
-      logo: (
-        <AudioLinesIcon
-        />
-      ),
-      plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: (
-        <TerminalIcon
-        />
-      ),
-      plan: "Free",
-    },
+      plan: "Bounty Plus Inc.",
+    } 
   ],
   navMain: [
     {
@@ -61,14 +45,10 @@ const data = {
         {
           title: "TP Uploader",
           url: "/dashboard/uploader",
-        },
-        {
-          title: "TP Uploaded Files",
-          url: "/dashboard/uploaded-files",
-        },
+        }, 
         {
           title: "TP List",
-          url: "/dashboard/lists",
+          url: "/dashboard/tp-list",
         },
         {
           title: "TP Users",

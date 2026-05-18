@@ -58,7 +58,8 @@ export function tpUploaderReducer(state: TpUploaderState, event: TpUploaderEvent
         },
       }
     case "FIELD_ERROR_CLEARED": {
-      const { [event.field]: _, ...rest } = state.fieldErrors
+      const rest = { ...state.fieldErrors }
+      delete rest[event.field]
       return {
         ...state,
         fieldErrors: rest,

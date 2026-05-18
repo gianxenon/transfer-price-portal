@@ -2,6 +2,7 @@ type UploadApiOk = {
   ok: true
   summary?: string
   items?: Array<{ row: number; message: string; status?: "error" | "warning" | "ok" }>
+  ctgiApiResponse?: unknown
 }
 
 type UploadApiErr = {
@@ -9,6 +10,7 @@ type UploadApiErr = {
   message?: string
   summary?: string
   items?: Array<{ row: number; message: string; status?: "error" | "warning" | "ok" }>
+  ctgiApiResponse?: unknown
 }
 
 type UploadApiResponse = UploadApiOk | UploadApiErr
@@ -18,6 +20,7 @@ export type UploadResult = {
   summary?: string
   message?: string
   items?: Array<{ row: number; message: string; status?: "error" | "warning" | "ok" }>
+  ctgiApiResponse?: unknown
 }
 
 export async function uploadTransferPriceFile(formData: FormData): Promise<UploadResult> {
@@ -59,6 +62,7 @@ export async function uploadTransferPriceFile(formData: FormData): Promise<Uploa
         ok: false,
         message: message || "Upload failed",
         items: "items" in payload ? payload.items : [],
+        ctgiApiResponse: "ctgiApiResponse" in payload ? payload.ctgiApiResponse : undefined,
       }
     }
 
@@ -66,6 +70,7 @@ export async function uploadTransferPriceFile(formData: FormData): Promise<Uploa
       ok: true,
       summary: "summary" in payload ? payload.summary : "Upload successful.",
       items: "items" in payload ? payload.items : [],
+      ctgiApiResponse: "ctgiApiResponse" in payload ? payload.ctgiApiResponse : undefined,
     }
   } catch {
     return {

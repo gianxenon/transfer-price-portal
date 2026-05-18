@@ -4,13 +4,15 @@ import { BUSINESS_CENTER_HEADERS } from "@/src/app/infrastructure/db/tp-uploader
 import { sendHtmlMail } from "@/src/app/infrastructure/email/smtp-mailer"
 import {
   buildTpUploadSummaryEmailHtml,
-  TpUploadEmailRow,
+  TpUploadCtgiEmailRow,
+  TpUploadWmsEmailRow,
 } from "@/src/app/infrastructure/tp-uploader/email-summary"
 
 type TpUploaderRow = Record<string, string | number>
 
 type SendTpUploadSummaryEmailsInput = {
   rows: TpUploaderRow[]
+  ctgiRowsByBusinessCenter?: Partial<Record<string, TpUploadCtgiEmailRow[]>>
   effectivityDate: string
   emailList: string
   filename: string
@@ -30,10 +32,18 @@ function formatEffectivityDate(value: string) {
   if (!trimmed) return ""
   const parsed = new Date(trimmed)
   if (Number.isNaN(parsed.getTime())) return trimmed
-  const month = String(parsed.getMonth() + 1).padStart(2, "0")
-  const day = String(parsed.getDate()).padStart(2, "0")
-  const year = String(parsed.getFullYear())
+  return formatDateParts(parsed)
+}
+
+function formatDateParts(value: Date) {
+  const month = String(value.getMonth() + 1).padStart(2, "0")
+  const day = String(value.getDate()).padStart(2, "0")
+  const year = String(value.getFullYear())
   return `${month}/${day}/${year}`
+}
+
+function formatSubjectDate(value: Date) {
+  return formatDateParts(value)
 }
 
 function parseNumber(value: unknown) {
@@ -43,12 +53,67 @@ function parseNumber(value: unknown) {
   return Number(cleaned)
 }
 
+function buildWmsEmailRows(rows: TpUploaderRow[]) {
+  const wmsRows: TpUploadWmsEmailRow[] = []
+
+  for (const row of rows) {
+    const productId = String(row["ProductsId"] ?? "").trim()
+    const productName = String(row["ProductsName"] ?? "").trim()
+    const uom = String(row["SALES UOM"] ?? "").trim()
+
+    if (!productId || !productName || !uom) {
+      continue
+    }
+
+    const pricesByBusinessCenter: Partial<Record<string, number>> = {}
+    let hasAtLeastOnePrice = false
+
+    for (const businessCenter of BUSINESS_CENTER_HEADERS) {
+      const price = parseNumber(row[businessCenter])
+      if (!Number.isFinite(price)) {
+        continue
+      }
+
+      pricesByBusinessCenter[businessCenter] = price
+      hasAtLeastOnePrice = true
+    }
+
+    if (!hasAtLeastOnePrice) {
+      continue
+    }
+
+    wmsRows.push({
+      productId,
+      productName,
+      uom,
+      pricesByBusinessCenter,
+      remarks: "",
+    })
+  }
+
+  return wmsRows
+}
+
+function flattenCtgiEmailRows(
+  ctgiRowsByBusinessCenter?: Partial<Record<string, TpUploadCtgiEmailRow[]>>
+) {
+  const rows: TpUploadCtgiEmailRow[] = []
+
+  for (const businessCenter of BUSINESS_CENTER_HEADERS) {
+    const businessCenterRows = ctgiRowsByBusinessCenter?.[businessCenter] || []
+    rows.push(...businessCenterRows)
+  }
+
+  return rows
+}
+
 export async function sendTpUploadSummaryEmails(
   input: SendTpUploadSummaryEmailsInput
 ) {
   const recipients = parseEmailList(input.emailList)
 
   const effectivityDateFormatted = formatEffectivityDate(input.effectivityDate)
+  const subjectDate = formatSubjectDate(new Date())
   const companyLabel = input.companyName?.trim()
   const introParts = [
     companyLabel ? `Company: ${companyLabel}` : null,
@@ -58,59 +123,42 @@ export async function sendTpUploadSummaryEmails(
   ].filter(Boolean)
 
   const subtitle = introParts.join(" | ")
+  const subject = `Transfer Price Upload Summary - ${subjectDate}`
+  const wmsRows = buildWmsEmailRows(input.rows)
+  const ctgiRows = flattenCtgiEmailRows(input.ctgiRowsByBusinessCenter)
 
-  const sendResults: Array<{ businessCenter: string; rows: number }> = []
-
-  for (const businessCenter of BUSINESS_CENTER_HEADERS) {
-    const emailRows: TpUploadEmailRow[] = input.rows
-      .map((row) => {
-        const productId = String(row["ProductsId"] ?? "").trim()
-        const productName = String(row["ProductsName"] ?? "").trim()
-        const uom = String(row["SALES UOM"] ?? "").trim()
-        const price = parseNumber(row[businessCenter])
-
-        if (!productId || !productName || !uom || !Number.isFinite(price)) {
-          return null
-        }
-
-        return {
-          productId,
-          productName,
-          price,
-          uom,
-          effectivityDate: effectivityDateFormatted,
-          customerGroup: "",
-          distributionChannel: "",
-          businessCenter,
-          articleNo: "",
-          remarks: "",
-        }
-      })
-      .filter((row): row is TpUploadEmailRow => Boolean(row))
-
-    if (emailRows.length === 0) continue
-
-    const html = buildTpUploadSummaryEmailHtml({
-      title: `Transfer Price Upload Summary - ${businessCenter}`,
-      subtitle,
-      rows: emailRows,
-    })
-
-    const subject = effectivityDateFormatted
-      ? `Transfer Price Upload Summary - ${businessCenter} - ${effectivityDateFormatted}`
-      : `Transfer Price Upload Summary - ${businessCenter}`
-
-    await sendHtmlMail({
-      to: recipients,
-      subject,
-      html,
-    })
-
-    sendResults.push({ businessCenter, rows: emailRows.length })
+  if (wmsRows.length === 0 && ctgiRows.length === 0) {
+    return {
+      recipients,
+      sent: 0,
+    }
   }
+
+  const html = buildTpUploadSummaryEmailHtml({
+    title: "Transfer Price Upload Summary",
+    subtitle,
+    sections: [
+      {
+        kind: "wms",
+        title: "WMS TRANSFER PRICE",
+        rows: wmsRows,
+      },
+      {
+        kind: "ctgi",
+        title: "BOS-CTGI",
+        rows: ctgiRows,
+      },
+    ],
+  })
+
+  await sendHtmlMail({
+    to: recipients,
+    subject,
+    html,
+  })
 
   return {
     recipients,
-    sent: sendResults,
+    sent: 1,
   }
 }

@@ -2,7 +2,6 @@ import "server-only"
 
 import sql from "mssql"
 import { getPool } from "@/src/app/infrastructure/db"
-import { getMysqlPool } from "./mysql"
 
 type TpUploaderRow = Record<string, string | number>
 
@@ -144,16 +143,14 @@ export async function upsertTpRows(input: UpsertTpRowsInput): Promise<void> {
                @approval,
                NULL
              )`
-          )
-      }
-    }
-
-    
+          ) 
+      } 
+    }  
     await transaction.commit()
+ 
+     
   } catch (error) {
     await transaction.rollback()
     throw error
-  }
-
-   
+  } 
 }

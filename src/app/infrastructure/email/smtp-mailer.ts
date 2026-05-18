@@ -8,6 +8,12 @@ type SendHtmlMailInput = {
   subject: string
   html: string
   text?: string
+  inReplyTo?: string
+  references?: string | string[]
+}
+
+export type SendHtmlMailResult = {
+  messageId: string
 }
 
 type SmtpConfig = {
@@ -106,7 +112,9 @@ function getTransporter(config: SmtpConfig) {
   return transporter
 }
 
-export async function sendHtmlMail(input: SendHtmlMailInput) {
+export async function sendHtmlMail(
+  input: SendHtmlMailInput
+): Promise<SendHtmlMailResult> {
   const config = readSmtpConfigFromEnv()
   if (!config) {
     throw new Error(
@@ -119,11 +127,17 @@ export async function sendHtmlMail(input: SendHtmlMailInput) {
   }
 
   const transporter = getTransporter(config)
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: config.from,
     to: input.to,
     subject: input.subject,
     html: input.html,
     text: input.text,
+    inReplyTo: input.inReplyTo,
+    references: input.references,
   })
+
+  return {
+    messageId: info.messageId,
+  }
 }

@@ -1,12 +1,14 @@
 import "server-only"
 
 import { cookies } from "next/headers"
-import sql from "mssql"
+import type { TpUploaderResultItem } from "@/src/app/application/events/tp-uploader/upload"
 import { validateTpUpload } from "@/src/app/application/use-cases/tp-uploader/validate"
 import { sendTpUploadSummaryEmails } from "@/src/app/application/use-cases/tp-uploader/send-summary-emails"
 import { getSessionById, getUserNameById } from "@/src/app/infrastructure/db/auth-repo"
+import { syncTpUploadToEbtCtgiApi } from "@/src/app/infrastructure/data-sources/tp-uploader/ebtctgi-sync"
 import { getPool } from "@/src/app/infrastructure/db"
 import { upsertTpRows } from "@/src/app/infrastructure/db/tp-uploader-repo"
+import type { TpUploadCtgiEmailRow } from "@/src/app/infrastructure/tp-uploader/email-summary"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
@@ -18,6 +20,24 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     headers: { "Content-Type": "application/json" },
   })
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
+}
+
+function buildWarningItem(message: string) {
+  return {
+    row: 0,
+    message,
+    status: "warning" as const,
+  }
+}
+
+type InterCompanyLookupRow = {
+  companyId?: number
+  companyName?: string
+  isInterCompany?: boolean | number
 }
 
 export async function POST(request: Request) {
@@ -70,33 +90,82 @@ export async function POST(request: Request) {
       }
     }
 
-    let companyName: string | undefined
-    try {
-      const pool = await getPool()
-      const result = await pool
-        .request()
-        .input("companyId", sql.Int, customersMotherCompanyId)
-        .query(
-          "SELECT TOP 1 CustomersMotherCompanyName AS companyName FROM CustomersMotherCompany WHERE CustomersMotherCompanyId = @companyId"
-        )
-      const rawName = String(result.recordset?.[0]?.companyName ?? "").trim()
-      companyName = rawName || undefined
-    } catch {
-      companyName = undefined
+    const pool = await getPool()
+    const result = await pool
+      .request()
+      .input("companyId", customersMotherCompanyId)
+      .query(`SELECT TOP 1
+        CustomersMotherCompanyName AS companyName,
+        CustomersMotherCompanyId AS companyId,
+        isInterCompany
+      FROM CustomersMotherCompany
+      WHERE CustomersMotherCompanyId = @companyId`)
+
+    const companyRow = result.recordset?.[0] as InterCompanyLookupRow | undefined
+    const rawName = String(companyRow?.companyName ?? "").trim()
+    const rawCompanyId = Number(companyRow?.companyId)
+    const rawIsInterCompany = Number(companyRow?.isInterCompany ?? 0)
+
+    if (!rawName || !Number.isInteger(rawCompanyId) || rawCompanyId <= 0) {
+      return jsonResponse(
+        { ok: false, summary: "Company is invalid.", items: [] },
+        400
+      )
     }
 
+    const companyName = rawName
+    const interCompanyId =
+      rawIsInterCompany === 1 ? rawCompanyId : undefined
+
+    const responseItems: TpUploaderResultItem[] = [...(validation.items || [])]
+    const summaryParts: string[] = []
+    const rows = validation.rows || []
+    let ctgiRowsByBusinessCenter: Partial<Record<string, TpUploadCtgiEmailRow[]>> = {}
+    let ctgiApiResponse: unknown = null
     await upsertTpRows({
-      rows: validation.rows || [],
+      rows,
       customersMotherCompanyId,
       effectivityDate,
       emailList,
       filename: file.name,
       createdBy,
     })
+   if (interCompanyId === customersMotherCompanyId) { 
+      try {
+        const ctgiResult = await syncTpUploadToEbtCtgiApi({
+          rows,
+          effectivityDate,
+          filename: file.name,
+          createdBy,
+        })
+
+        ctgiRowsByBusinessCenter = ctgiResult.emailRowsByBusinessCenter
+        ctgiApiResponse = ctgiResult.apiResponse ?? null
+
+        // if (ctgiResult.sent > 0) {
+        //   summaryParts.push(`CTGI sync sent: ${ctgiResult.sent}.`)
+        // }
+
+        if (ctgiResult.warnings.length > 0) {
+          summaryParts.push(`CTGI sync warnings: ${ctgiResult.warnings.length}.`)
+          for (const warning of ctgiResult.warnings) {
+            responseItems.push(buildWarningItem(warning))
+          }
+        }
+      } catch (error) {
+        const ctgiWarning = `CTGI sync warning: ${getErrorMessage(
+          error,
+          "Failed to sync to EBT-CTGI."
+        )}`
+        responseItems.push(buildWarningItem(ctgiWarning))
+        summaryParts.push(ctgiWarning)
+      }
+    }
 
     try {
       const emailResult = await sendTpUploadSummaryEmails({
-        rows: validation.rows || [],
+        rows,
+        ctgiRowsByBusinessCenter,
         effectivityDate,
         emailList,
         filename: file.name,
@@ -104,27 +173,25 @@ export async function POST(request: Request) {
         createdBy,
       })
 
-      const bcCount = emailResult.sent.length
-      const summary = `${validation.summary} Emails sent per BC: ${bcCount}.`
-      return jsonResponse({ ok: true, summary, items: validation.items }, 200)
+      summaryParts.push(`Emails sent: ${emailResult.sent}.`)
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to send summary email."
-      const summary = `${validation.summary} Upload completed, but email sending failed: ${message}`
-      return jsonResponse(
-        {
-          ok: true,
-          summary,
-          items: [
-            ...(validation.items || []),
-            { row: 0, message, status: "warning" },
-          ],
-        },
-        200
-      )
+      const emailWarning = `Email warning: ${getErrorMessage(
+        error,
+        "Failed to send summary email."
+      )}`
+      responseItems.push(buildWarningItem(emailWarning))
+      summaryParts.push(emailWarning)
     }
+
+    return jsonResponse({
+      ok: true,
+      summary: [validation.summary, ...summaryParts].join(" ").trim(),
+      items: responseItems,
+      ctgiApiResponse,
+    })
   
   } catch (error) {
-     const message = error instanceof Error ? error.message : "Error processing file."
+     const message = getErrorMessage(error, "Error processing file.")
      return jsonResponse({ ok: false, summary: message, items: [] }, 500)
   } 
 }
